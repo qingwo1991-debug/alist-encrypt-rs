@@ -1,0 +1,40 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: alist-encrypt-rs-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: alist_encrypt
+      MYSQL_USER: alist_encrypt
+      MYSQL_PASSWORD: change_me
+    ports:
+      - '3306:3306'
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  alist-encrypt-rs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alist-encrypt-rs
+    depends_on:
+      - mysql
+    environment:
+      RUST_PROXY_ADDR: 0.0.0.0:5345
+      UPSTREAM_BASE_URL: http://host.docker.internal:5244
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: alist_encrypt
+      MYSQL_USER: alist_encrypt
+      MYSQL_PASSWORD: change_me
+      AUTO_MIGRATE: 'true'
+      LOG_RAW_FILENAME_DEFAULT: 'false'
+      ADMIN_TOKEN: change_me
+      RUST_LOG: info
+    ports:
+      - '5345:5345'
+
+volumes:
+  mysql_data:

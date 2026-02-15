@@ -1,0 +1,68 @@
+name: build-binaries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Run tests
+        run: cargo test -j 1
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          BIN=alist-encrypt-rs
+          cp target/${{ matrix.target }}/release/$BIN dist/$BIN
+          tar -czf dist/${BIN}-${{ matrix.target }}.tar.gz -C dist $BIN
+          sha256sum dist/${BIN}-${{ matrix.target }}.tar.gz > dist/${BIN}-${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alist-encrypt-rs-${{ matrix.target }}
+          path: |
+            dist/alist-encrypt-rs-${{ matrix.target }}.tar.gz
+            dist/alist-encrypt-rs-${{ matrix.target }}.sha256
+
+  build-windows-exe:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release exe
+        run: cargo build --release
+      - name: Package exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/alist-encrypt-rs.exe dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alist-encrypt-rs-windows-amd64
+          path: dist/alist-encrypt-rs.exe

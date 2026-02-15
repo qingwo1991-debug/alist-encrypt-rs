@@ -1,0 +1,193 @@
+openapi: 3.1.0
+info:
+  title: alist-encrypt-rs control API
+  version: 0.1.0
+servers:
+  - url: http://localhost:5345
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200': { description: Ready }
+        '503': { description: Not ready }
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        '200': { description: Metrics text }
+  /admin:
+    get:
+      summary: Web control console
+      responses:
+        '200': { description: HTML }
+  /v2/admin/ping:
+    get:
+      summary: Control plane ping
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: OK }
+  /v2/admin/runtime-settings:
+    get:
+      summary: Get runtime settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: OK }
+    put:
+      summary: Save and apply runtime settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant_id: { type: string }
+                settings:
+                  type: object
+                  properties:
+                    upstream_http2_only: { type: boolean }
+                    upstream_http2_adaptive_window: { type: boolean }
+                    upstream_http2_keepalive_interval_secs: { type: integer }
+                    upstream_http2_keepalive_timeout_secs: { type: integer }
+                    upstream_pool_max_idle_per_host: { type: integer }
+                    upstream_pool_idle_timeout_secs: { type: integer }
+                    upstream_connect_timeout_ms: { type: integer }
+                    upstream_request_timeout_ms: { type: integer }
+                    upstream_tcp_nodelay: { type: boolean }
+                    admin_raw_filename_logging_default: { type: boolean }
+                    max_request_body_bytes: { type: integer }
+                    max_response_body_bytes: { type: integer }
+      responses:
+        '200': { description: Saved and applied }
+  /v2/admin/meta/prefetch-now:
+    post:
+      summary: Trigger metadata prefetch cycle immediately
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stale_secs: { type: integer }
+                batch: { type: integer }
+      responses:
+        '200': { description: Prefetch done }
+  /v2/admin/strategy/recommend/{cloud_drive_name}:
+    get:
+      summary: Get best learned strategy for a cloud drive
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: cloud_drive_name
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /v2/admin/timeout-profiles/{iface_name}:
+    get:
+      summary: Get timeout profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: iface_name
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    put:
+      summary: Save timeout profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: iface_name
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant_id: { type: string }
+                connect_ms: { type: integer }
+                ttfb_ms: { type: integer }
+                read_idle_ms: { type: integer }
+                total_ms: { type: integer }
+      responses:
+        '200': { description: Saved }
+  /v2/admin/logging-policy:
+    get:
+      summary: Get logging policy
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: OK }
+    put:
+      summary: Save logging policy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant_id: { type: string }
+                raw_filename_enabled: { type: boolean }
+      responses:
+        '200': { description: Saved }
+  /v2/admin/codec/encode:
+    post:
+      summary: Encode filename
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: { type: string }
+      responses:
+        '200': { description: Encoded }
+  /v2/admin/codec/decode:
+    post:
+      summary: Decode filename
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: { type: string }
+      responses:
+        '200': { description: Decoded }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

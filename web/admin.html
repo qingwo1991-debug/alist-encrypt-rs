@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>alist-encrypt-rs Control</title>
+  <style>
+    :root {
+      --bg: #0f1720;
+      --card: #142335;
+      --card2: #1b314a;
+      --ink: #e8f1fb;
+      --muted: #9fb5ce;
+      --accent: #2dd4bf;
+      --accent2: #fb7185;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Manrope", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(1100px 600px at -10% -10%, #1f3d5d, #0f1720),
+                  linear-gradient(130deg, #0b1520, #111f2f 45%, #0f1720 100%);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px 36px; }
+    .hero {
+      border: 1px solid #254865;
+      background: linear-gradient(135deg, #16324b, #12273b 45%, #231d35);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,.35);
+      animation: in .35s ease-out;
+    }
+    @keyframes in { from { transform: translateY(8px); opacity: .6; } to { transform: none; opacity: 1; } }
+    h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: .3px; }
+    p.lead { margin: 0; color: var(--muted); }
+    .grid {
+      margin-top: 16px;
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .card {
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border: 1px solid #23405a;
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 18px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%;
+      background: #0f1f2f;
+      border: 1px solid #2b4e6f;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 9px 10px;
+      outline: none;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .toggle { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .toggle input { width: auto; }
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 12px;
+      color: #06121f;
+      background: linear-gradient(135deg, var(--accent), #5eead4);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.alt { background: linear-gradient(135deg, #fda4af, var(--accent2)); }
+    pre {
+      margin: 10px 0 0;
+      padding: 10px;
+      border-radius: 10px;
+      background: #0b1522;
+      border: 1px solid #1f3952;
+      max-height: 260px;
+      overflow: auto;
+      color: #cde5ff;
+      font-size: 12px;
+    }
+    .pill { display: inline-block; border-radius: 999px; padding: 4px 10px; font-size: 12px; background: #15344f; color: #94b8dc; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>alist-encrypt-rs Control Panel</h1>
+    <p class="lead">Production-grade runtime tuning: HTTP/2, pools, timeouts, logging, codec verification.</p>
+    <div style="margin-top:10px" class="pill" id="apiBase">/v2/admin</div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Auth</h2>
+      <label>Bearer Token</label>
+      <input id="token" placeholder="optional if server does not require" />
+      <div class="btns">
+        <button onclick="saveToken()">Save Token</button>
+        <button class="alt" onclick="clearToken()">Clear</button>
+      </div>
+      <pre id="authOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Runtime Settings</h2>
+      <div class="row3">
+        <div><label>Connect Timeout (ms)</label><input id="connectMs" type="number"></div>
+        <div><label>Request Timeout (ms)</label><input id="requestMs" type="number"></div>
+        <div><label>Pool Max Idle / Host</label><input id="poolIdle" type="number"></div>
+      </div>
+      <div class="row3" style="margin-top:8px">
+        <div><label>Pool Idle Timeout (s)</label><input id="poolIdleSec" type="number"></div>
+        <div><label>H2 Keepalive Interval (s)</label><input id="h2Int" type="number"></div>
+        <div><label>H2 Keepalive Timeout (s)</label><input id="h2To" type="number"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label>Max Request Body (bytes)</label><input id="maxReq" type="number"></div>
+        <div><label>Max Response Body (bytes)</label><input id="maxResp" type="number"></div>
+      </div>
+      <div class="toggle"><input id="h2Only" type="checkbox"><label for="h2Only">HTTP/2 Prior Knowledge (upstream)</label></div>
+      <div class="toggle"><input id="h2Adapt" type="checkbox"><label for="h2Adapt">HTTP/2 Adaptive Window</label></div>
+      <div class="toggle"><input id="tcpNoDelay" type="checkbox"><label for="tcpNoDelay">TCP_NODELAY</label></div>
+      <div class="toggle"><input id="rawLog" type="checkbox"><label for="rawLog">Raw Filename Logging Default</label></div>
+      <div class="row3" style="margin-top:8px">
+        <div><label>QoS High Concurrency</label><input id="qosHigh" type="number"></div>
+        <div><label>QoS Low Concurrency</label><input id="qosLow" type="number"></div>
+        <div><label>Strategy Rollout %</label><input id="rolloutPct" type="number" min="0" max="100"></div>
+      </div>
+      <div class="row3" style="margin-top:8px">
+        <div><label>Breaker Fail Threshold</label><input id="breakerFail" type="number"></div>
+        <div><label>Breaker Cooldown (s)</label><input id="breakerCd" type="number"></div>
+        <div><label>Prefetch Interval (s)</label><input id="prefetchInt" type="number"></div>
+      </div>
+      <div class="toggle"><input id="strategyOn" type="checkbox"><label for="strategyOn">Enable Strategy Learning</label></div>
+      <div class="toggle"><input id="prefetchOn" type="checkbox"><label for="prefetchOn">Enable Metadata Prefetch</label></div>
+      <div class="btns">
+        <button onclick="loadRuntime()">Load</button>
+        <button onclick="saveRuntime()">Save & Apply</button>
+        <button class="alt" onclick="prefetchNow()">Prefetch Now</button>
+      </div>
+      <pre id="runtimeOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Interface Timeout Profile</h2>
+      <div class="row">
+        <div><label>Interface Name</label><input id="ifaceName" value="GET /dav/*path" /></div>
+        <div><label>Tenant</label><input id="tenant" value="default" /></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label>Connect (ms)</label><input id="tpConnect" type="number" value="300" /></div>
+        <div><label>TTFB (ms)</label><input id="tpTtfb" type="number" value="2000" /></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label>Read Idle (ms)</label><input id="tpIdle" type="number" value="4000" /></div>
+        <div><label>Total (ms, 0=disabled)</label><input id="tpTotal" type="number" value="12000" /></div>
+      </div>
+      <div class="btns">
+        <button onclick="getTimeoutProfile()">Load Profile</button>
+        <button onclick="saveTimeoutProfile()">Save Profile</button>
+      </div>
+      <pre id="tpOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Filename Codec Validation</h2>
+      <label>Input Value</label>
+      <textarea id="codecInput" rows="4">中文 + Japanese-テスト (A-B)* & space</textarea>
+      <div class="btns">
+        <button onclick="codecEncode()">Encode</button>
+        <button onclick="codecDecode()">Decode</button>
+      </div>
+      <pre id="codecOut"></pre>
+    </section>
+  </div>
+</div>
+
+<script>
+const byId = (id) => document.getElementById(id)
+const authHeaders = () => {
+  const token = localStorage.getItem('ae_admin_token') || ''
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+const setOut = (id, v) => byId(id).textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+const j = async (url, opt={}) => {
+  const headers = { 'content-type': 'application/json', ...(opt.headers||{}), ...authHeaders() }
+  const r = await fetch(url, { ...opt, headers })
+  const t = await r.text()
+  let d = t
+  try { d = JSON.parse(t) } catch {}
+  if (!r.ok) throw new Error(typeof d === 'string' ? d : JSON.stringify(d))
+  return d
+}
+function saveToken(){ localStorage.setItem('ae_admin_token', byId('token').value.trim()); setOut('authOut', {ok:true}) }
+function clearToken(){ localStorage.removeItem('ae_admin_token'); byId('token').value=''; setOut('authOut', {ok:true, cleared:true}) }
+async function loadRuntime(){
+  try {
+    const r = await j('/v2/admin/runtime-settings')
+    const s = r.data
+    byId('connectMs').value = s.upstream_connect_timeout_ms
+    byId('requestMs').value = s.upstream_request_timeout_ms
+    byId('poolIdle').value = s.upstream_pool_max_idle_per_host
+    byId('poolIdleSec').value = s.upstream_pool_idle_timeout_secs
+    byId('h2Int').value = s.upstream_http2_keepalive_interval_secs
+    byId('h2To').value = s.upstream_http2_keepalive_timeout_secs
+    byId('maxReq').value = s.max_request_body_bytes
+    byId('maxResp').value = s.max_response_body_bytes
+    byId('qosHigh').value = s.qos_high_priority_concurrency
+    byId('qosLow').value = s.qos_low_priority_concurrency
+    byId('rolloutPct').value = s.strategy_learning_rollout_percent
+    byId('breakerFail').value = s.circuit_breaker_fail_threshold
+    byId('breakerCd').value = s.circuit_breaker_cooldown_secs
+    byId('prefetchInt').value = s.metadata_prefetch_interval_secs
+    byId('h2Only').checked = !!s.upstream_http2_only
+    byId('h2Adapt').checked = !!s.upstream_http2_adaptive_window
+    byId('tcpNoDelay').checked = !!s.upstream_tcp_nodelay
+    byId('rawLog').checked = !!s.admin_raw_filename_logging_default
+    byId('strategyOn').checked = !!s.strategy_learning_enabled
+    byId('prefetchOn').checked = !!s.metadata_prefetch_enabled
+    setOut('runtimeOut', r)
+  } catch (e) { setOut('runtimeOut', String(e)) }
+}
+async function saveRuntime(){
+  try {
+    const payload = {
+      tenant_id: byId('tenant').value || 'default',
+      settings: {
+        upstream_connect_timeout_ms: +byId('connectMs').value,
+        upstream_request_timeout_ms: +byId('requestMs').value,
+        upstream_pool_max_idle_per_host: +byId('poolIdle').value,
+        upstream_pool_idle_timeout_secs: +byId('poolIdleSec').value,
+        upstream_http2_keepalive_interval_secs: +byId('h2Int').value,
+        upstream_http2_keepalive_timeout_secs: +byId('h2To').value,
+        max_request_body_bytes: +byId('maxReq').value,
+        max_response_body_bytes: +byId('maxResp').value,
+        qos_high_priority_concurrency: +byId('qosHigh').value,
+        qos_low_priority_concurrency: +byId('qosLow').value,
+        strategy_learning_rollout_percent: +byId('rolloutPct').value,
+        circuit_breaker_fail_threshold: +byId('breakerFail').value,
+        circuit_breaker_cooldown_secs: +byId('breakerCd').value,
+        metadata_prefetch_interval_secs: +byId('prefetchInt').value,
+        upstream_http2_only: byId('h2Only').checked,
+        upstream_http2_adaptive_window: byId('h2Adapt').checked,
+        upstream_tcp_nodelay: byId('tcpNoDelay').checked,
+        admin_raw_filename_logging_default: byId('rawLog').checked,
+        strategy_learning_enabled: byId('strategyOn').checked,
+        metadata_prefetch_enabled: byId('prefetchOn').checked,
+      }
+    }
+    const r = await j('/v2/admin/runtime-settings', { method:'PUT', body: JSON.stringify(payload) })
+    setOut('runtimeOut', r)
+  } catch (e) { setOut('runtimeOut', String(e)) }
+}
+async function prefetchNow(){
+  try {
+    setOut('runtimeOut', await j('/v2/admin/meta/prefetch-now', { method:'POST', body: JSON.stringify({ stale_secs:0, batch:64 }) }))
+  } catch (e) { setOut('runtimeOut', String(e)) }
+}
+async function getTimeoutProfile(){
+  try {
+    const iface = encodeURIComponent(byId('ifaceName').value)
+    setOut('tpOut', await j(`/v2/admin/timeout-profiles/${iface}`))
+  } catch (e) { setOut('tpOut', String(e)) }
+}
+async function saveTimeoutProfile(){
+  try {
+    const iface = encodeURIComponent(byId('ifaceName').value)
+    const body = {
+      tenant_id: byId('tenant').value || 'default',
+      connect_ms: +byId('tpConnect').value,
+      ttfb_ms: +byId('tpTtfb').value,
+      read_idle_ms: +byId('tpIdle').value,
+      total_ms: +byId('tpTotal').value,
+    }
+    setOut('tpOut', await j(`/v2/admin/timeout-profiles/${iface}`, { method:'PUT', body: JSON.stringify(body)}))
+  } catch (e) { setOut('tpOut', String(e)) }
+}
+async function codecEncode(){
+  try { setOut('codecOut', await j('/v2/admin/codec/encode',{method:'POST', body:JSON.stringify({value:byId('codecInput').value})})) }
+  catch (e) { setOut('codecOut', String(e)) }
+}
+async function codecDecode(){
+  try { setOut('codecOut', await j('/v2/admin/codec/decode',{method:'POST', body:JSON.stringify({value:byId('codecInput').value})})) }
+  catch (e) { setOut('codecOut', String(e)) }
+}
+byId('token').value = localStorage.getItem('ae_admin_token') || ''
+loadRuntime()
+</script>
+</body>
+</html>
