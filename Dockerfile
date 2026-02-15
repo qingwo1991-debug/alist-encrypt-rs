@@ -1,19 +1,20 @@
+# syntax=docker/dockerfile:1.7
 FROM rust:1.85-slim AS builder
 WORKDIR /build
 
-# Cache dependencies first. This layer is reused until Cargo.toml/Cargo.lock changes.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src \
-  && echo 'fn main() {}' > src/main.rs \
-  && echo '' > src/lib.rs \
-  && cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git/db \
+  cargo fetch --locked
 
-# Real sources
 COPY src src
 COPY web web
 COPY migrations migrations
 COPY config config
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+  --mount=type=cache,target=/usr/local/cargo/git/db \
+  --mount=type=cache,target=/build/target \
+  cargo build --release --locked
 
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
