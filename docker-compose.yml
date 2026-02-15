@@ -29,6 +29,10 @@ services:
       MYSQL_DB: alist_encrypt
       MYSQL_USER: alist_encrypt
       MYSQL_PASSWORD: change_me
+      MYSQL_AUTO_CREATE_DB: 'true'
+      MYSQL_ADMIN_USER: root
+      MYSQL_ADMIN_PASSWORD: root
+      MYSQL_ADMIN_DB: mysql
       AUTO_MIGRATE: 'true'
       LOG_RAW_FILENAME_DEFAULT: 'false'
       ADMIN_TOKEN: change_me

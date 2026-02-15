@@ -9,8 +9,21 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn connect(mysql_dsn: &str, auto_migrate: bool) -> Result<Self, sqlx::Error> {
-        let pool = MySqlPool::connect(mysql_dsn).await?;
+    pub async fn connect(
+        mysql_dsn: &str,
+        auto_migrate: bool,
+        mysql_auto_create_db: bool,
+        mysql_admin_dsn: &str,
+        mysql_db_name: &str,
+    ) -> Result<Self, sqlx::Error> {
+        let pool = match MySqlPool::connect(mysql_dsn).await {
+            Ok(pool) => pool,
+            Err(err) if mysql_auto_create_db && is_unknown_database_error(&err) => {
+                ensure_database_exists(mysql_admin_dsn, mysql_db_name).await?;
+                MySqlPool::connect(mysql_dsn).await?
+            }
+            Err(err) => return Err(err),
+        };
         if auto_migrate {
             let sql = include_str!("../migrations/001_init.sql");
             run_bootstrap_sql(&pool, sql).await?;
@@ -271,4 +284,28 @@ impl Db {
         .await?;
         Ok(row.map(|(v,)| v))
     }
+}
+
+fn is_unknown_database_error(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(db_err) => {
+            db_err.code().as_deref() == Some("1049")
+                || db_err.message().contains("Unknown database")
+        }
+        _ => false,
+    }
+}
+
+async fn ensure_database_exists(admin_dsn: &str, db_name: &str) -> Result<(), sqlx::Error> {
+    if db_name.trim().is_empty() {
+        return Ok(());
+    }
+    let admin_pool = MySqlPool::connect(admin_dsn).await?;
+    let escaped_name = db_name.replace('`', "``");
+    let stmt = format!(
+        "CREATE DATABASE IF NOT EXISTS `{}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+        escaped_name
+    );
+    sqlx::query(&stmt).execute(&admin_pool).await?;
+    Ok(())
 }

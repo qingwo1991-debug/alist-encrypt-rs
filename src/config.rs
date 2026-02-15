@@ -107,6 +107,9 @@ pub struct AppConfig {
     pub listen_addr: String,
     pub upstream_base_url: String,
     pub mysql_dsn: String,
+    pub mysql_admin_dsn: String,
+    pub mysql_db_name: String,
+    pub mysql_auto_create_db: bool,
     pub auto_migrate: bool,
     pub admin_token: Option<String>,
     pub admin_username: Option<String>,
@@ -143,6 +146,27 @@ impl AppConfig {
             "mysql://{}:{}@{}:{}/{}",
             mysql_user, mysql_password, mysql_host, mysql_port, mysql_db
         );
+        let mysql_admin_host =
+            std::env::var("MYSQL_ADMIN_HOST").unwrap_or_else(|_| mysql_host.clone());
+        let mysql_admin_port =
+            std::env::var("MYSQL_ADMIN_PORT").unwrap_or_else(|_| mysql_port.clone());
+        let mysql_admin_user =
+            std::env::var("MYSQL_ADMIN_USER").unwrap_or_else(|_| mysql_user.clone());
+        let mysql_admin_password =
+            std::env::var("MYSQL_ADMIN_PASSWORD").unwrap_or_else(|_| mysql_password.clone());
+        let mysql_admin_db =
+            std::env::var("MYSQL_ADMIN_DB").unwrap_or_else(|_| "mysql".to_string());
+        let mysql_admin_dsn = std::env::var("MYSQL_ADMIN_DSN").unwrap_or_else(|_| {
+            format!(
+                "mysql://{}:{}@{}:{}/{}",
+                mysql_admin_user,
+                mysql_admin_password,
+                mysql_admin_host,
+                mysql_admin_port,
+                mysql_admin_db
+            )
+        });
+        let mysql_auto_create_db = env_bool("MYSQL_AUTO_CREATE_DB", false);
 
         let auto_migrate = std::env::var("AUTO_MIGRATE")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
@@ -247,6 +271,9 @@ impl AppConfig {
             listen_addr,
             upstream_base_url,
             mysql_dsn,
+            mysql_admin_dsn,
+            mysql_db_name: mysql_db,
+            mysql_auto_create_db,
             auto_migrate,
             admin_token,
             admin_username,

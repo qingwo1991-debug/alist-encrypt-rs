@@ -16,7 +16,15 @@ async fn main() {
     alist_encrypt_rs::logging::init_logging();
 
     let cfg = AppConfig::from_env();
-    let db = match Db::connect(&cfg.mysql_dsn, cfg.auto_migrate).await {
+    let db = match Db::connect(
+        &cfg.mysql_dsn,
+        cfg.auto_migrate,
+        cfg.mysql_auto_create_db,
+        &cfg.mysql_admin_dsn,
+        &cfg.mysql_db_name,
+    )
+    .await
+    {
         Ok(db) => Some(db),
         Err(e) => {
             warn!(event = "db_connect_failed", message = %e);

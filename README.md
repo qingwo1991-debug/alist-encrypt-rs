@@ -38,6 +38,7 @@ cargo run
 
 Default listen address: `0.0.0.0:5345`
 Set `AUTO_MIGRATE=true` to apply `migrations/001_init.sql` on startup.
+Set `MYSQL_AUTO_CREATE_DB=true` to auto-create `MYSQL_DB` on startup if it does not exist (requires `MYSQL_ADMIN_*`/`MYSQL_ADMIN_DSN` with `CREATE DATABASE` privilege).
 Set `ADMIN_TOKEN=<token>` to protect `/v2/admin/*` endpoints with `Authorization: Bearer <token>`.
 Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` to enable `/login` password login + session cookie for `/admin` and `/v2/admin/*`.
 Set `ADMIN_COOKIE_SECURE_MODE=auto|always|off`:
