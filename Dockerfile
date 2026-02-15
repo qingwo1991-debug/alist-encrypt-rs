@@ -1,7 +1,11 @@
 FROM rust:1.85-slim AS builder
 WORKDIR /build
 COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
 COPY src src
+COPY web web
+COPY migrations migrations
+COPY config config
 RUN cargo build --release
 
 FROM gcr.io/distroless/cc-debian12
