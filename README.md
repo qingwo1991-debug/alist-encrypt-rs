@@ -88,3 +88,6 @@ creates tar artifact (`alist-encrypt-rs-linux-amd64.tar.gz`) and sha256, and bui
 ## Notes
 This is a production-oriented skeleton. Full crypto compatibility engine and deeper control-plane business APIs are
 staged in `../plan/*.md` and can now be implemented incrementally on this base.
+
+## Acknowledgements
+- Thanks to the original project: `traceless/alist-encrypt` (Node proxy implementation and migration baseline).

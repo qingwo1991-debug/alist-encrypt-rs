@@ -1,0 +1,16 @@
+# VCS
+.git
+.github
+
+# Build outputs
+target
+
+# Local env and editor files
+.env
+*.log
+.DS_Store
+.vscode
+.idea
+
+# CI/dev docs not required in image context
+plan
