@@ -108,8 +108,33 @@
       <div class="btns">
         <button onclick="saveToken()">Save Token</button>
         <button class="alt" onclick="clearToken()">Clear</button>
+        <button class="alt" onclick="logoutSession()">Logout Session</button>
       </div>
       <pre id="authOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Account Security</h2>
+      <div class="row">
+        <div><label>Current Password</label><input id="curPwd" type="password" /></div>
+        <div><label>New Username</label><input id="newUser" placeholder="admin" /></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label>New Password</label><input id="newPwd" type="password" /></div>
+        <div>
+          <label>Captcha</label>
+          <input id="ccCode" placeholder="6 digits" />
+          <input id="ccId" type="hidden" />
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+        <img id="ccImg" alt="captcha" style="height:48px;border:1px solid #2b4e6f;border-radius:8px;background:#fff" />
+        <button onclick="loadChangeCaptcha()">Refresh Captcha</button>
+      </div>
+      <div class="btns">
+        <button onclick="changeCredentials()">Update Username & Password</button>
+      </div>
+      <pre id="credOut"></pre>
     </section>
 
     <section class="card">
@@ -204,6 +229,37 @@ const j = async (url, opt={}) => {
 }
 function saveToken(){ localStorage.setItem('ae_admin_token', byId('token').value.trim()); setOut('authOut', {ok:true}) }
 function clearToken(){ localStorage.removeItem('ae_admin_token'); byId('token').value=''; setOut('authOut', {ok:true, cleared:true}) }
+async function logoutSession(){
+  try {
+    const r = await j('/v2/auth/logout', { method:'POST', body: '{}' })
+    setOut('authOut', r)
+  } catch (e) { setOut('authOut', String(e)) }
+}
+async function loadChangeCaptcha(){
+  try {
+    const r = await j('/v2/auth/captcha')
+    byId('ccId').value = r.data.captcha_id
+    byId('ccImg').src = 'data:image/svg+xml;utf8,' + encodeURIComponent(r.data.svg)
+    byId('credOut').textContent = ''
+  } catch (e) { setOut('credOut', String(e)) }
+}
+async function changeCredentials(){
+  try {
+    const body = {
+      current_password: byId('curPwd').value,
+      new_username: byId('newUser').value.trim(),
+      new_password: byId('newPwd').value,
+      captcha_id: byId('ccId').value,
+      captcha_code: byId('ccCode').value.trim()
+    }
+    const r = await j('/v2/auth/change-credentials', { method:'POST', body: JSON.stringify(body) })
+    setOut('credOut', r)
+    byId('curPwd').value = ''
+    byId('newPwd').value = ''
+    byId('ccCode').value = ''
+    loadChangeCaptcha()
+  } catch (e) { setOut('credOut', String(e)); loadChangeCaptcha() }
+}
 async function loadRuntime(){
   try {
     const r = await j('/v2/admin/runtime-settings')
@@ -295,6 +351,7 @@ async function codecDecode(){
   catch (e) { setOut('codecOut', String(e)) }
 }
 byId('token').value = localStorage.getItem('ae_admin_token') || ''
+loadChangeCaptcha()
 loadRuntime()
 </script>
 </body>

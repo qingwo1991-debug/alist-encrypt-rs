@@ -4,7 +4,7 @@ use alist_encrypt_rs::{
     config::{AppConfig, RuntimeSettings},
     db::Db,
     meta_prefetch, metrics, routes,
-    state::AppState,
+    state::{AdminCredentials, AppState},
     upstream::build_upstream_client,
 };
 use tokio::{net::TcpListener, sync::RwLock};
@@ -25,6 +25,7 @@ async fn main() {
     };
 
     let runtime = load_runtime_settings(db.as_ref(), cfg.runtime.clone()).await;
+    let admin_credentials = load_admin_credentials(db.as_ref(), &cfg).await;
     let upstream = build_upstream_client(&runtime).expect("failed to create upstream client");
 
     let state = AppState {
@@ -40,6 +41,9 @@ async fn main() {
             runtime.qos_low_priority_concurrency.max(1),
         )),
         breaker_state: Arc::new(RwLock::new(HashMap::new())),
+        admin_sessions: Arc::new(RwLock::new(HashMap::new())),
+        captcha_store: Arc::new(RwLock::new(HashMap::new())),
+        admin_credentials: Arc::new(RwLock::new(admin_credentials)),
     };
     meta_prefetch::spawn_meta_prefetch_worker(state.clone());
 
@@ -71,6 +75,33 @@ async fn load_runtime_settings(db: Option<&Db>, fallback: RuntimeSettings) -> Ru
         Ok(Some(text)) => serde_json::from_str::<RuntimeSettings>(&text).unwrap_or(fallback),
         Ok(None) => fallback,
         Err(_) => fallback,
+    }
+}
+
+async fn load_admin_credentials(db: Option<&Db>, cfg: &AppConfig) -> Option<AdminCredentials> {
+    if let Some(db) = db {
+        let username = db
+            .get_runtime_kv("admin.auth.username")
+            .await
+            .ok()
+            .flatten();
+        let password = db
+            .get_runtime_kv("admin.auth.password")
+            .await
+            .ok()
+            .flatten();
+        if let (Some(username), Some(password)) = (username, password) {
+            if !username.trim().is_empty() && !password.is_empty() {
+                return Some(AdminCredentials { username, password });
+            }
+        }
+    }
+
+    match (cfg.admin_username.clone(), cfg.admin_password.clone()) {
+        (Some(username), Some(password)) if !username.trim().is_empty() && !password.is_empty() => {
+            Some(AdminCredentials { username, password })
+        }
+        _ => None,
     }
 }
 

@@ -109,7 +109,19 @@ pub struct AppConfig {
     pub mysql_dsn: String,
     pub auto_migrate: bool,
     pub admin_token: Option<String>,
+    pub admin_username: Option<String>,
+    pub admin_password: Option<String>,
+    pub admin_cookie_secure_mode: AdminCookieSecureMode,
+    pub admin_session_ttl_secs: u64,
+    pub admin_captcha_ttl_secs: u64,
     pub runtime: RuntimeSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdminCookieSecureMode {
+    Auto,
+    Always,
+    Off,
 }
 
 impl AppConfig {
@@ -136,6 +148,20 @@ impl AppConfig {
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
             .unwrap_or(false);
         let admin_token = std::env::var("ADMIN_TOKEN").ok();
+        let admin_username = std::env::var("ADMIN_USERNAME").ok();
+        let admin_password = std::env::var("ADMIN_PASSWORD").ok();
+        let admin_cookie_secure_mode = std::env::var("ADMIN_COOKIE_SECURE_MODE")
+            .ok()
+            .and_then(|v| parse_cookie_secure_mode(&v))
+            .unwrap_or_else(|| {
+                if env_bool("ADMIN_COOKIE_SECURE", false) {
+                    AdminCookieSecureMode::Always
+                } else {
+                    AdminCookieSecureMode::Off
+                }
+            });
+        let admin_session_ttl_secs = env_u64("ADMIN_SESSION_TTL_SECS", 60 * 60 * 12);
+        let admin_captcha_ttl_secs = env_u64("ADMIN_CAPTCHA_TTL_SECS", 60 * 2);
 
         let mut runtime = RuntimeSettings::default();
         runtime.upstream_http2_only = env_bool("UPSTREAM_HTTP2_ONLY", runtime.upstream_http2_only);
@@ -223,8 +249,26 @@ impl AppConfig {
             mysql_dsn,
             auto_migrate,
             admin_token,
+            admin_username,
+            admin_password,
+            admin_cookie_secure_mode,
+            admin_session_ttl_secs,
+            admin_captcha_ttl_secs,
             runtime,
         }
+    }
+
+    pub fn password_login_enabled(&self) -> bool {
+        self.admin_username.is_some() && self.admin_password.is_some()
+    }
+}
+
+fn parse_cookie_secure_mode(v: &str) -> Option<AdminCookieSecureMode> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(AdminCookieSecureMode::Auto),
+        "always" | "true" | "on" => Some(AdminCookieSecureMode::Always),
+        "off" | "false" => Some(AdminCookieSecureMode::Off),
+        _ => None,
     }
 }
 

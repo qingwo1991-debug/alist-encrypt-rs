@@ -1,19 +1,26 @@
 use axum::{
     extract::{MatchedPath, Request, State},
-    http::{header::AUTHORIZATION, HeaderMap, HeaderValue, Method, StatusCode},
+    http::{
+        header::{AUTHORIZATION, COOKIE, LOCATION, SET_COOKIE},
+        HeaderMap, HeaderValue, Method, StatusCode,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use chrono::Utc;
+use rand::{thread_rng, Rng};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::time::{timeout, Duration, Instant};
+use std::time::Instant;
+use tokio::time::{sleep, timeout, Duration};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
     admin_ui,
+    config::AdminCookieSecureMode,
     context::{ProxyRequestMeta, RequestContext},
     control, proxy,
     state::AppState,
@@ -49,9 +56,26 @@ pub fn app_router(state: AppState) -> Router {
 
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/admin", get(admin_ui::admin_page))
+        .route(
+            "/admin",
+            get(admin_ui::admin_page).route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                admin_page_auth_middleware,
+            )),
+        )
+        .route("/login", get(admin_ui::login_page))
         .route("/metrics", get(metrics))
         .route("/readyz", get(readyz))
+        .route("/v2/auth/captcha", get(auth_captcha))
+        .route("/v2/auth/login", post(auth_login))
+        .route("/v2/auth/logout", post(auth_logout))
+        .route(
+            "/v2/auth/change-credentials",
+            post(auth_change_credentials).route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                admin_auth_middleware,
+            )),
+        )
         .nest("/v2/admin", admin_router)
         .route("/dav/*path", axum::routing::any(proxy::proxy_dav))
         .route("/d/*path", axum::routing::any(proxy::proxy_download))
@@ -68,17 +92,11 @@ async fn admin_auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    let Some(token) = state.cfg.admin_token.as_ref() else {
+    let auth_required = state.cfg.admin_token.is_some() || password_login_enabled(&state).await;
+    if !auth_required {
         return next.run(req).await;
-    };
-
-    let auth = req
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let expected = format!("Bearer {}", token);
-    if auth != expected {
+    }
+    if !is_admin_authorized(req.headers(), &state).await {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({
@@ -89,6 +107,404 @@ async fn admin_auth_middleware(
             .into_response();
     }
     next.run(req).await
+}
+
+async fn admin_page_auth_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if !password_login_enabled(&state).await {
+        return next.run(req).await;
+    }
+    if is_admin_authorized(req.headers(), &state).await {
+        return next.run(req).await;
+    }
+    (StatusCode::FOUND, [(LOCATION, "/login")]).into_response()
+}
+
+async fn is_admin_authorized(headers: &HeaderMap, state: &AppState) -> bool {
+    if let Some(token) = state.cfg.admin_token.as_ref() {
+        let auth = headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let expected = format!("Bearer {}", token);
+        if auth == expected {
+            return true;
+        }
+    }
+
+    if !password_login_enabled(state).await {
+        return false;
+    }
+
+    let Some(session_id) = cookie_value(headers, "ae_admin_session") else {
+        return false;
+    };
+
+    let now = Instant::now();
+    let mut sessions = state.admin_sessions.write().await;
+    sessions.retain(|_, v| v.expires_at > now);
+    if let Some(session) = sessions.get(&session_id) {
+        let _ = &session.username;
+        return session.expires_at > now;
+    }
+    false
+}
+
+async fn password_login_enabled(state: &AppState) -> bool {
+    state.admin_credentials.read().await.is_some()
+}
+
+fn cookie_value(headers: &HeaderMap, key: &str) -> Option<String> {
+    let raw = headers.get(COOKIE)?.to_str().ok()?;
+    raw.split(';').map(str::trim).find_map(|pair| {
+        let mut parts = pair.splitn(2, '=');
+        let k = parts.next()?;
+        let v = parts.next()?;
+        if k == key {
+            Some(v.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+    captcha_id: String,
+    captcha_code: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangeCredentialsRequest {
+    current_password: String,
+    new_username: String,
+    new_password: String,
+    captcha_id: String,
+    captcha_code: String,
+}
+
+async fn auth_captcha(State(state): State<AppState>) -> impl IntoResponse {
+    if !password_login_enabled(&state).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": 400, "message": "password login disabled"})),
+        );
+    }
+
+    let captcha_id = Uuid::new_v4().to_string();
+    let code = {
+        let mut rng = thread_rng();
+        format!("{:06}", rng.gen_range(0..1_000_000))
+    };
+    let svg = render_captcha_svg(&code);
+    let now = Instant::now();
+    let ttl = Duration::from_secs(state.cfg.admin_captcha_ttl_secs.max(30));
+
+    let mut store = state.captcha_store.write().await;
+    store.retain(|_, v| v.expires_at > now);
+    store.insert(
+        captcha_id.clone(),
+        crate::state::CaptchaEntry {
+            answer: code,
+            expires_at: now + ttl,
+        },
+    );
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "code": 0,
+            "data": {
+                "captcha_id": captcha_id,
+                "svg": svg,
+                "expires_in_secs": ttl.as_secs()
+            }
+        })),
+    )
+}
+
+async fn auth_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<LoginRequest>,
+) -> Response {
+    if !password_login_enabled(&state).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": 400, "message": "password login disabled"})),
+        )
+            .into_response();
+    }
+
+    if !consume_captcha(
+        &state,
+        payload.captcha_id.trim(),
+        payload.captcha_code.trim(),
+    )
+    .await
+    {
+        sleep(Duration::from_millis(300)).await;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": 401, "message": "invalid captcha"})),
+        )
+            .into_response();
+    }
+
+    let creds = state.admin_credentials.read().await.clone();
+    let (username_ok, password_ok) = match creds {
+        Some(c) => (
+            c.username == payload.username.trim(),
+            c.password == payload.password.as_str(),
+        ),
+        None => (false, false),
+    };
+    if !(username_ok && password_ok) {
+        sleep(Duration::from_millis(300)).await;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": 401, "message": "invalid credentials"})),
+        )
+            .into_response();
+    }
+
+    let session_id = random_session_id();
+    let session_ttl = state.cfg.admin_session_ttl_secs.max(300);
+    let now = Instant::now();
+    let mut sessions = state.admin_sessions.write().await;
+    sessions.retain(|_, v| v.expires_at > now);
+    sessions.insert(
+        session_id.clone(),
+        crate::state::AdminSession {
+            username: payload.username,
+            expires_at: now + Duration::from_secs(session_ttl),
+        },
+    );
+
+    let cookie = build_session_cookie(
+        &session_id,
+        session_ttl,
+        cookie_should_be_secure(state.cfg.admin_cookie_secure_mode, &headers),
+        false,
+    );
+    let mut headers = HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(&cookie) {
+        headers.insert(SET_COOKIE, v);
+    }
+
+    (
+        StatusCode::OK,
+        headers,
+        Json(json!({"code": 0, "message": "ok"})),
+    )
+        .into_response()
+}
+
+async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(session_id) = cookie_value(&headers, "ae_admin_session") {
+        let mut sessions = state.admin_sessions.write().await;
+        sessions.remove(&session_id);
+    }
+    let cookie = build_session_cookie(
+        "",
+        0,
+        cookie_should_be_secure(state.cfg.admin_cookie_secure_mode, &headers),
+        true,
+    );
+    let mut out_headers = HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(&cookie) {
+        out_headers.insert(SET_COOKIE, v);
+    }
+    (
+        StatusCode::OK,
+        out_headers,
+        Json(json!({"code": 0, "message": "logged out"})),
+    )
+        .into_response()
+}
+
+async fn auth_change_credentials(
+    State(state): State<AppState>,
+    Json(payload): Json<ChangeCredentialsRequest>,
+) -> Response {
+    if !password_login_enabled(&state).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": 400, "message": "password login disabled"})),
+        )
+            .into_response();
+    }
+
+    let new_username = payload.new_username.trim();
+    if new_username.is_empty() || payload.new_password.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": 400, "message": "username/password cannot be empty"})),
+        )
+            .into_response();
+    }
+
+    if !consume_captcha(
+        &state,
+        payload.captcha_id.trim(),
+        payload.captcha_code.trim(),
+    )
+    .await
+    {
+        sleep(Duration::from_millis(300)).await;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"code": 401, "message": "invalid captcha"})),
+        )
+            .into_response();
+    }
+
+    {
+        let creds = state.admin_credentials.read().await;
+        let Some(current) = creds.as_ref() else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"code": 400, "message": "password login disabled"})),
+            )
+                .into_response();
+        };
+        if current.password != payload.current_password {
+            sleep(Duration::from_millis(300)).await;
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"code": 401, "message": "current password invalid"})),
+            )
+                .into_response();
+        }
+    }
+
+    {
+        let mut creds = state.admin_credentials.write().await;
+        *creds = Some(crate::state::AdminCredentials {
+            username: new_username.to_string(),
+            password: payload.new_password.clone(),
+        });
+    }
+
+    if let Some(db) = &state.db {
+        if let Err(e) = db
+            .set_runtime_kv_json("admin.auth.username", &format!("\"{}\"", new_username))
+            .await
+        {
+            warn!(event = "save_admin_username_failed", message = %e);
+        }
+        if let Err(e) = db
+            .set_runtime_kv_json(
+                "admin.auth.password",
+                &format!("\"{}\"", payload.new_password),
+            )
+            .await
+        {
+            warn!(event = "save_admin_password_failed", message = %e);
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({"code": 0, "message": "credentials updated"})),
+    )
+        .into_response()
+}
+
+async fn consume_captcha(state: &AppState, captcha_id: &str, captcha_code: &str) -> bool {
+    let now = Instant::now();
+    let mut store = state.captcha_store.write().await;
+    store.retain(|_, v| v.expires_at > now);
+    match store.remove(captcha_id) {
+        Some(v) => v.expires_at > now && v.answer == captcha_code,
+        None => false,
+    }
+}
+
+fn random_session_id() -> String {
+    let mut rng = thread_rng();
+    let mut buf = String::with_capacity(48);
+    for _ in 0..48 {
+        let n: u8 = rng.gen_range(0..16);
+        buf.push(char::from_digit(n as u32, 16).unwrap_or('0'));
+    }
+    buf
+}
+
+fn build_session_cookie(session_id: &str, max_age_secs: u64, secure: bool, clear: bool) -> String {
+    let mut cookie = if clear {
+        "ae_admin_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0".to_string()
+    } else {
+        format!(
+            "ae_admin_session={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
+            session_id, max_age_secs
+        )
+    };
+    if secure {
+        cookie.push_str("; Secure");
+    }
+    cookie
+}
+
+fn cookie_should_be_secure(mode: AdminCookieSecureMode, headers: &HeaderMap) -> bool {
+    match mode {
+        AdminCookieSecureMode::Always => true,
+        AdminCookieSecureMode::Off => false,
+        AdminCookieSecureMode::Auto => request_looks_https(headers),
+    }
+}
+
+fn request_looks_https(headers: &HeaderMap) -> bool {
+    let proto_https = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| {
+                v.split(',')
+                    .next()
+                    .map(|s| s.trim().eq_ignore_ascii_case("https"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    };
+    if proto_https("x-forwarded-proto")
+        || proto_https("x-forwarded-protocol")
+        || proto_https("x-url-scheme")
+    {
+        return true;
+    }
+    headers
+        .get("cf-visitor")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.contains("\"scheme\":\"https\""))
+        .unwrap_or(false)
+}
+
+fn render_captcha_svg(code: &str) -> String {
+    let mut rng = thread_rng();
+    let mut noise = String::new();
+    for _ in 0..6 {
+        let x1: i32 = rng.gen_range(0..160);
+        let y1: i32 = rng.gen_range(0..60);
+        let x2: i32 = rng.gen_range(0..160);
+        let y2: i32 = rng.gen_range(0..60);
+        noise.push_str(&format!(
+            "<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='#9ca3af' stroke-width='1' />"
+        ));
+    }
+
+    format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='60' viewBox='0 0 160 60'>\
+<rect width='160' height='60' fill='#f3f4f6' rx='8'/>\
+{noise}\
+<text x='18' y='40' font-size='30' font-family='monospace' fill='#111827' letter-spacing='4'>{code}</text>\
+</svg>"
+    )
 }
 
 async fn healthz() -> Json<Value> {

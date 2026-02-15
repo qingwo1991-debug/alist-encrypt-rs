@@ -38,6 +38,7 @@ dependencies = [
  "pbkdf2",
  "percent-encoding",
  "quick-xml",
+ "rand 0.8.5",
  "rc4",
  "reqwest",
  "serde",

@@ -18,6 +18,9 @@ pub struct AppState {
     pub qos_high: Arc<Semaphore>,
     pub qos_low: Arc<Semaphore>,
     pub breaker_state: Arc<RwLock<HashMap<String, BreakerState>>>,
+    pub admin_sessions: Arc<RwLock<HashMap<String, AdminSession>>>,
+    pub captcha_store: Arc<RwLock<HashMap<String, CaptchaEntry>>>,
+    pub admin_credentials: Arc<RwLock<Option<AdminCredentials>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,4 +36,22 @@ impl BreakerState {
             open_until: None,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminSession {
+    pub username: String,
+    pub expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaptchaEntry {
+    pub answer: String,
+    pub expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminCredentials {
+    pub username: String,
+    pub password: String,
 }

@@ -39,6 +39,14 @@ cargo run
 Default listen address: `0.0.0.0:5345`
 Set `AUTO_MIGRATE=true` to apply `migrations/001_init.sql` on startup.
 Set `ADMIN_TOKEN=<token>` to protect `/v2/admin/*` endpoints with `Authorization: Bearer <token>`.
+Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` to enable `/login` password login + session cookie for `/admin` and `/v2/admin/*`.
+Set `ADMIN_COOKIE_SECURE_MODE=auto|always|off`:
+- `auto`: add `Secure` cookie only when request looks HTTPS (recommended for mixed Cloudflare Tunnel + intranet HTTP).
+- `always`: always add `Secure` cookie.
+- `off`: never add `Secure` cookie.
+Legacy `ADMIN_COOKIE_SECURE=true|false` is still supported as fallback.
+Use `GET /v2/auth/captcha` + `POST /v2/auth/login` for login, and
+`POST /v2/auth/change-credentials` to rotate username/password (requires current password + captcha).
 Runtime performance knobs support HTTP/2, pool, timeout, and body limits (see `config/app.env.example`).
 Additional runtime knobs include QoS priority concurrency, strategy-learning rollout, circuit breaker, and metadata prefetch.
 

@@ -32,6 +32,9 @@ services:
       AUTO_MIGRATE: 'true'
       LOG_RAW_FILENAME_DEFAULT: 'false'
       ADMIN_TOKEN: change_me
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change_me_strong_password
+      ADMIN_COOKIE_SECURE_MODE: auto
       RUST_LOG: info
     ports:
       - '5345:5345'

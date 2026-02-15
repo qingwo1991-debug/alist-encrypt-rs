@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>alist-encrypt-rs Login</title>
+  <style>
+    :root {
+      --bg: #0b1320;
+      --card: #121f33;
+      --ink: #e5eefb;
+      --muted: #9cb2ce;
+      --accent: #2dd4bf;
+      --danger: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Space Grotesk", "Manrope", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(900px 500px at 15% 0%, #1e3754, #0b1320),
+                  linear-gradient(130deg, #0a101a, #111f30 45%, #0d1522 100%);
+      padding: 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      border-radius: 16px;
+      padding: 18px;
+      background: linear-gradient(180deg, #14263b, var(--card));
+      border: 1px solid #284567;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .35);
+    }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+    label { display: block; margin: 10px 0 6px; color: var(--muted); font-size: 12px; }
+    input {
+      width: 100%;
+      background: #0f1f2f;
+      color: var(--ink);
+      border: 1px solid #2a496b;
+      border-radius: 10px;
+      padding: 10px;
+      outline: none;
+    }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    img { height: 46px; border-radius: 8px; border: 1px solid #2a496b; background: #fff; }
+    .btns { display: flex; gap: 8px; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .ok { background: linear-gradient(135deg, var(--accent), #5eead4); color: #07121e; }
+    .alt { background: linear-gradient(135deg, #fda4af, var(--danger)); color: #2b0b15; }
+    pre {
+      margin: 12px 0 0;
+      border-radius: 10px;
+      padding: 10px;
+      background: #0a1522;
+      border: 1px solid #1c334d;
+      color: #cfe4ff;
+      font-size: 12px;
+      min-height: 44px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Admin Login</h1>
+    <p>Use account + password + numeric captcha to access /admin.</p>
+
+    <label>Username</label>
+    <input id="username" autocomplete="username" />
+
+    <label>Password</label>
+    <input id="password" type="password" autocomplete="current-password" />
+
+    <label>Captcha</label>
+    <div class="row">
+      <input id="captchaCode" placeholder="6 digits" />
+      <img id="captchaImg" alt="captcha" />
+    </div>
+
+    <input id="captchaId" type="hidden" />
+    <div class="btns">
+      <button class="ok" onclick="login()">Login</button>
+      <button class="alt" onclick="refreshCaptcha()">Refresh Captcha</button>
+    </div>
+    <pre id="out"></pre>
+  </div>
+
+  <script>
+    const byId = (id) => document.getElementById(id)
+    const setOut = (v) => byId('out').textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+
+    async function refreshCaptcha() {
+      try {
+        const r = await fetch('/v2/auth/captcha')
+        const d = await r.json()
+        if (!r.ok) throw new Error(JSON.stringify(d))
+        byId('captchaId').value = d.data.captcha_id
+        byId('captchaImg').src = 'data:image/svg+xml;utf8,' + encodeURIComponent(d.data.svg)
+      } catch (e) {
+        setOut(String(e))
+      }
+    }
+
+    async function login() {
+      try {
+        const body = {
+          username: byId('username').value.trim(),
+          password: byId('password').value,
+          captcha_id: byId('captchaId').value,
+          captcha_code: byId('captchaCode').value.trim(),
+        }
+        const r = await fetch('/v2/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const t = await r.text()
+        let d = t
+        try { d = JSON.parse(t) } catch {}
+        if (!r.ok) throw new Error(typeof d === 'string' ? d : JSON.stringify(d))
+        setOut(d)
+        window.location.href = '/admin'
+      } catch (e) {
+        setOut(String(e))
+        refreshCaptcha()
+      }
+    }
+
+    refreshCaptcha()
+  </script>
+</body>
+</html>
